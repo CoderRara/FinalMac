@@ -1,3 +1,5 @@
+Option Explicit
+
 Sub ScrapeAmazonData()
     Dim driver As New Selenium.ChromeDriver
     Dim html As Object
@@ -91,10 +93,10 @@ Sub ScrapeAmazonData()
             manufacturer = html.getElementsByClassName("po-break-word")(0).innerText
             On Error GoTo 0
             ws.Cells(i, 9).Value = manufacturer
-            
-            ' Fetch Best Seller Rank
+
+            ' Fetch Best Seller Rank information using XPath
             On Error Resume Next
-            bestSellerRank = html.getElementsByTagName("tr")(0).getElementsByTagName("td")(0).innerText
+            bestSellerRank = driver.FindElementByXPath("//th[contains(text(), 'Best Sellers Rank')]/following-sibling::td").Text
             On Error GoTo 0
             ws.Cells(i, 10).Value = bestSellerRank
         End If
