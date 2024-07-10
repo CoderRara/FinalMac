@@ -1,0 +1,183 @@
+Option Explicit
+
+Sub ScrapeAmazonData()
+    Dim driver As New Selenium.ChromeDriver
+    Dim html As Object
+    Dim lastRow As Long
+    Dim i As Long
+    Dim asin As String
+    Dim productName As String
+    Dim brand As String
+    Dim productPrice As String
+    Dim productImageURL As String
+    Dim imgPath As String
+    Dim seller As String
+    Dim ratings As String
+    Dim reviews As String
+    Dim manufacturer As String
+    Dim bestSellerRank As String
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Sheets("Sheet1")
+
+    ' Set up Chrome WebDriver
+    driver.Start "chrome" ' Ensure ChromeDriver path is set correctly if not in PATH
+    
+    ' Get the last row with data in Column B
+    lastRow = ws.Cells(ws.Rows.Count, "B").End(xlUp).Row
+
+    ' Loop through each ASIN in Column B, starting from the second row
+    For i = 2 To lastRow
+        asin = ws.Cells(i, 2).Value
+        
+        ' Check if the row already has data
+        If ws.Cells(i, 4).Value = "" Then
+            driver.Get "https://www.amazon.in/dp/" & asin
+            
+            ' Wait for the page to load
+            Application.Wait Now + TimeValue("00:00:05")
+            
+            Set html = CreateObject("htmlfile")
+            html.body.innerHTML = driver.PageSource
+            
+            ' Fetch product name
+            On Error Resume Next
+            productName = html.getElementById("productTitle").innerText
+            On Error GoTo 0
+            ws.Cells(i, 4).Value = productName
+            
+            ' Extract brand from product name (first word)
+            brand = Split(Trim(productName), " ")(0)
+            ws.Cells(i, 5).Value = brand
+            
+            ' Fetch product price
+            On Error Resume Next
+            productPrice = html.getElementsByClassName("a-price-whole")(0).innerText
+            On Error GoTo 0
+            ws.Cells(i, 6).Value = productPrice
+            
+            ' Fetch product image URL
+            On Error Resume Next
+            productImageURL = html.getElementById("landingImage").getAttribute("src")
+            On Error GoTo 0
+            
+            ' Download the image to temp storage
+            If productImageURL <> "" Then
+                imgPath = Environ("TEMP") & "\productImage_" & asin & ".jpg"
+                DownloadFile productImageURL, imgPath
+                
+                ' Insert and resize the image in Excel
+                InsertImage ws, imgPath, ws.Cells(i, 3)
+            End If
+            
+            ' Fetch seller information
+            On Error Resume Next
+            seller = html.getElementById("sellerProfileTriggerId").innerText
+            On Error GoTo 0
+            ws.Cells(i, 7).Value = seller
+            
+            ' Fetch ratings information
+            On Error Resume Next
+            ratings = html.getElementById("acrPopover").getAttribute("title")
+            ratings = Replace(ratings, " out of 5 stars", "")
+            On Error GoTo 0
+            ws.Cells(i, 8).Value = ratings
+            
+            ' Fetch reviews information
+            On Error Resume Next
+            reviews = html.getElementById("acrCustomerReviewText").innerText
+            On Error GoTo 0
+            ws.Cells(i, 9).Value = reviews
+            
+            ' Fetch manufacturer information using XPath
+            On Error Resume Next
+            manufacturer = driver.FindElementByXPath("//th[contains(text(), 'Manufacturer')]/following-sibling::td").Text
+            On Error GoTo 0
+            ws.Cells(i, 10).Value = manufacturer
+
+            ' Fetch Best Seller Rank information using XPath
+            On Error Resume Next
+            bestSellerRank = driver.FindElementByXPath("//th[contains(text(), 'Best Sellers Rank')]/following-sibling::td").Text
+            On Error GoTo 0
+            ws.Cells(i, 11).Value = bestSellerRank
+        End If
+    Next i
+    
+    ' Autofit the columns
+    ws.Columns("D:K").AutoFit
+    
+    ' Call the formatting subroutine
+    FormatLastColumn
+    
+    ' Quit the driver
+    driver.Quit
+    
+    ' Show completion message
+    MsgBox "Data Fetching Completed", vbInformation
+End Sub
+
+Sub DownloadFile(myURL As String, destinationFile As String)
+    Dim WinHttpReq As Object
+    Set WinHttpReq = CreateObject("MSXML2.ServerXMLHTTP")
+
+    On Error GoTo ErrorHandler
+    
+    ' Send HTTP request
+    WinHttpReq.Open "GET", myURL, False
+    WinHttpReq.send
+    
+    ' Check if request was successful (status 200)
+    If WinHttpReq.Status = 200 Then
+        ' Create file stream
+        Dim oStream As Object
+        Set oStream = CreateObject("ADODB.Stream")
+        oStream.Open
+        oStream.Type = 1 ' Binary
+        oStream.Write WinHttpReq.responseBody
+        oStream.SaveToFile destinationFile, 2 ' 1 = no overwrite, 2 = overwrite
+        oStream.Close
+    Else
+        MsgBox "Failed to download file: " & myURL & vbCrLf & "Status: " & WinHttpReq.Status, vbExclamation
+    End If
+    
+    Exit Sub
+    
+ErrorHandler:
+    MsgBox "Error downloading file: " & myURL & vbCrLf & Err.Description, vbCritical
+End Sub
+
+Sub InsertImage(ws As Worksheet, imgPath As String, rng As Range)
+    Dim img As Picture
+    Set img = ws.Pictures.Insert(imgPath)
+    
+    ' Resize the cell to fit the image
+    With rng
+        .ColumnWidth = 15
+        .RowHeight = 100
+    End With
+    
+    ' Resize and position the image
+    With img
+        .ShapeRange.LockAspectRatio = msoFalse
+        .Width = rng.Width * 0.8  ' Adjust the width to 80% of the cell width
+        .Height = rng.Height * 0.8  ' Adjust the height to 80% of the cell height
+        .Left = rng.Left + (rng.Width - .Width) / 2
+        .Top = rng.Top + (rng.Height - .Height) / 2
+        .Placement = xlMoveAndSize
+    End With
+End Sub
+
+Sub FormatLastColumn()
+    Dim ws As Worksheet
+    Dim lastCol As Long
+    
+    Set ws = ThisWorkbook.Sheets("Sheet1")
+    
+    ' Find the last column with data in the first row
+    lastCol = ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
+    
+    ' Disable wrap text and autofit column width for the last column
+    With ws.Columns(lastCol)
+        .WrapText = False
+        .AutoFit
+    End With
+End Sub
